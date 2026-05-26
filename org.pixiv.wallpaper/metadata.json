@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/Wallpaper",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "shuangx339@gmail.com",
+                "Name": "eam2539"
+            }
+        ],
+        "Category": "Online Services",
+        "Description": "Fetch Pixiv recommendations or themed illustrations and rotate them as the desktop wallpaper.",
+        "Description[zh_CN]": "抓取 Pixiv 推荐或主题插画，并自动轮换为桌面壁纸。",
+        "Icon": "preferences-desktop-wallpaper",
+        "Id": "org.pixiv.wallpaper",
+        "License": "GPL-3.0-or-later",
+        "Name": "Pixiv Wallpaper",
+        "Name[zh_CN]": "Pixiv 壁纸"
+    }
+}

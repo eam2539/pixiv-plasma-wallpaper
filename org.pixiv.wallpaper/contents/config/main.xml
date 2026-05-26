@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+      http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+
+  <group name="General">
+    <entry name="RefreshToken" type="String">
+      <label>Pixiv OAuth refresh token</label>
+      <default></default>
+    </entry>
+    <entry name="Mode" type="String">
+      <label>Fetch mode</label>
+      <default>recommended</default>
+    </entry>
+    <entry name="Theme" type="String">
+      <label>Search keyword or tag</label>
+      <default></default>
+    </entry>
+    <entry name="RefreshMinutes" type="Int">
+      <label>Minutes between Pixiv fetches</label>
+      <default>360</default>
+    </entry>
+    <entry name="RotateMinutes" type="Int">
+      <label>Minutes between wallpaper rotations</label>
+      <default>30</default>
+    </entry>
+    <entry name="FetchCount" type="Int">
+      <label>Images to download per fetch</label>
+      <default>4</default>
+    </entry>
+    <entry name="LocalImagePaths" type="String">
+      <label>Local image paths, one per line</label>
+      <default></default>
+    </entry>
+    <entry name="LocalImageCache" type="StringList">
+      <label>Expanded local image files</label>
+      <default></default>
+    </entry>
+    <entry name="LocalImageCacheKey" type="String">
+      <label>Expanded local image cache key</label>
+      <default></default>
+    </entry>
+    <entry name="RotationMode" type="String">
+      <label>Wallpaper rotation mode</label>
+      <default>sequential</default>
+    </entry>
+    <entry name="IncludeLocalImages" type="Bool">
+      <label>Include local images in rotation</label>
+      <default>false</default>
+    </entry>
+    <entry name="LocalImageRatio" type="Int">
+      <label>Local image ratio percent</label>
+      <default>50</default>
+    </entry>
+    <entry name="MinBookmarks" type="Int">
+      <label>Minimum bookmarks</label>
+      <default>0</default>
+    </entry>
+    <entry name="MinViews" type="Int">
+      <label>Minimum views</label>
+      <default>0</default>
+    </entry>
+    <entry name="TagBlacklist" type="String">
+      <label>Blacklisted tags, one per line or comma separated</label>
+      <default></default>
+    </entry>
+    <entry name="IncludeR18" type="Bool">
+      <label>Allow R-18 images</label>
+      <default>false</default>
+    </entry>
+    <entry name="IncludeAI" type="Bool">
+      <label>Allow AI generated images</label>
+      <default>false</default>
+    </entry>
+    <entry name="LandscapeOnly" type="Bool">
+      <label>Prefer landscape images</label>
+      <default>true</default>
+    </entry>
+    <entry name="FitTolerance" type="Int">
+      <label>Aspect-ratio tolerance percent</label>
+      <default>35</default>
+    </entry>
+    <entry name="FillMode" type="Int">
+      <label>Sizing, cropping and positioning of the wallpaper image</label>
+      <default>3</default>
+    </entry>
+    <entry name="Color" type="Color">
+      <label>Background color</label>
+      <default>#000000</default>
+    </entry>
+    <entry name="CurrentImage" type="String">
+      <label>Current downloaded wallpaper file</label>
+      <default></default>
+    </entry>
+    <entry name="CachedImages" type="StringList">
+      <label>Cached downloaded wallpaper files</label>
+      <default></default>
+    </entry>
+    <entry name="CurrentIndex" type="Int">
+      <label>Current cached wallpaper index</label>
+      <default>-1</default>
+    </entry>
+    <entry name="LastFetch" type="String">
+      <label>Last fetch time</label>
+      <default></default>
+    </entry>
+    <entry name="LastRotate" type="String">
+      <label>Last rotate time</label>
+      <default></default>
+    </entry>
+    <entry name="NotifyEvents" type="Bool">
+      <label>Show desktop notifications</label>
+      <default>true</default>
+    </entry>
+  </group>
+</kcfg>

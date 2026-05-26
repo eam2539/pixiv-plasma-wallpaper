@@ -1,0 +1,173 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: org.pixiv.wallpaper\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-05-24 00:00+0000\n"
+"PO-Revision-Date: 2026-05-24 00:00+0000\n"
+"Last-Translator: OpenCode\n"
+"Language-Team: Chinese Simplified\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Open Current Image"
+msgstr "打开当前图片"
+
+msgid "Open Pixiv Page"
+msgstr "打开 Pixiv 页面"
+
+msgid "Rotate Now"
+msgstr "立即轮换"
+
+msgid "Fetch Images Now"
+msgstr "立即抓取图片"
+
+msgid "Choose Local Image"
+msgstr "选择本地图片"
+
+msgid "Image files (*.jpg *.jpeg *.png *.webp *.bmp)"
+msgstr "图片文件 (*.jpg *.jpeg *.png *.webp *.bmp)"
+
+msgid "Refresh token:"
+msgstr "刷新令牌："
+
+msgid "Pixiv OAuth refresh_token"
+msgstr "Pixiv OAuth refresh_token"
+
+msgid "Login"
+msgstr "登录"
+
+msgid "Actions:"
+msgstr "操作："
+
+msgid "Source:"
+msgstr "来源："
+
+msgid "Daily recommendations"
+msgstr "每日推荐"
+
+msgid "Theme search"
+msgstr "主题搜索"
+
+msgid "Daily ranking"
+msgstr "每日排行"
+
+msgid "Following"
+msgstr "关注用户"
+
+msgid "Theme/tag:"
+msgstr "主题/标签："
+
+msgid "Example: landscape, 初音ミク"
+msgstr "示例：landscape、初音ミク"
+
+msgid "Fetch every:"
+msgstr "抓取间隔："
+
+msgid "%1 minute"
+msgid_plural "%1 minutes"
+msgstr[0] "%1 分钟"
+
+msgid "Rotate every:"
+msgstr "轮换间隔："
+
+msgid "Fetch count:"
+msgstr "抓取数量："
+
+msgid "Local image paths:"
+msgstr "本地图片路径："
+
+msgid "One file or folder per line"
+msgstr "每行一个文件或文件夹"
+
+msgid "Rotation mode:"
+msgstr "轮换方式："
+
+msgid "Sequential"
+msgstr "顺序"
+
+msgid "Random"
+msgstr "随机"
+
+msgid "Include local images"
+msgstr "包含本地图片"
+
+msgid "Local image ratio:"
+msgstr "本地图片比例："
+
+msgid "%1% local"
+msgstr "%1% 本地"
+
+msgid "Min bookmarks:"
+msgstr "最低收藏数："
+
+msgid "Min views:"
+msgstr "最低浏览量："
+
+msgid "Tag blacklist:"
+msgstr "Tag黑名单："
+
+msgid "One tag per line, or comma separated"
+msgstr "每行一个tag或者逗号分隔"
+
+msgid "Prefer landscape images"
+msgstr "优先横图"
+
+msgid "Allow R-18 images"
+msgstr "允许 R-18 图片"
+
+msgid "Allow AI generated images"
+msgstr "允许 AI 生成图片"
+
+msgid "Aspect tolerance:"
+msgstr "宽高比容差："
+
+msgid "%1%"
+msgstr "%1%"
+
+msgid "Positioning:"
+msgstr "定位方式："
+
+msgid "Scaled and cropped"
+msgstr "缩放并裁剪"
+
+msgid "Scaled, keep proportions"
+msgstr "缩放并保持比例"
+
+msgid "Stretched"
+msgstr "拉伸"
+
+msgid "Centered"
+msgstr "居中"
+
+msgid "Background color:"
+msgstr "背景颜色："
+
+msgid "Select Background Color"
+msgstr "选择背景颜色"
+
+msgid "Status:"
+msgstr "状态："
+
+msgid "No cached Pixiv wallpapers yet."
+msgstr "还没有缓存的 Pixiv 壁纸。"
+
+msgid "No wallpapers available yet."
+msgstr "还没有可用壁纸。"
+
+msgid "Showing cached Pixiv wallpaper."
+msgstr "正在显示缓存的 Pixiv 壁纸。"
+
+msgid "Showing wallpaper."
+msgstr "正在显示壁纸。"
+
+msgid "Showing selected local image."
+msgstr "正在显示选择的本地图片。"
+
+msgid "Image failed to load, skipping."
+msgstr "图片加载失败，已跳过。"
+
+msgid "Show desktop notifications"
+msgstr "显示桌面通知"
