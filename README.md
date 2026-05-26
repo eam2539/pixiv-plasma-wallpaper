@@ -4,6 +4,8 @@ Pixiv Wallpaper is a KDE Plasma 6 wallpaper plugin that downloads Pixiv illustra
 
 ## Usage
 
+You can get the package in the [KDE Store](https://store.kde.org/p/2360473/)
+
 1. Select `Pixiv Wallpaper` in the Plasma wallpaper settings.
 2. Click `Login` and complete Pixiv OAuth in the browser.
 3. Choose a source: daily recommendations, theme search, daily ranking, or following.
@@ -19,6 +21,14 @@ Pixiv Wallpaper is a KDE Plasma 6 wallpaper plugin that downloads Pixiv illustra
 - `Choose Local Image`: opens the local Pixiv cache directory by default and lets you pick an image.
 - `Open Current Image`: opens the currently displayed image in the default image viewer.
 - `Open Pixiv Page`: opens the currently displayed image on the Pixiv website
+
+## Tips
+
+To rotate the wallpaper with a keyboard shortcut, open KDE System Settings → `Keyboard` → `Shortcut Key`, add a custom shell shortcut and paste:
+
+```bash
+/usr/bin/python3 ~/.local/share/plasma/wallpapers/org.pixiv.wallpaper/contents/code/pixiv_wallpaper.py rotate-now
+```
 
 ## Requirements
 
