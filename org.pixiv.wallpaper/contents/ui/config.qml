@@ -16,12 +16,15 @@ Kirigami.FormLayout {
     property string cfg_Mode
     property string cfg_Theme
     property int cfg_RefreshMinutes
+    property int cfg_RefreshSeconds
+    property bool cfg_AutoFetch
     property int cfg_RotateMinutes
+    property int cfg_RotateSeconds
+    property bool cfg_AutoRotate
     property int cfg_FetchCount
     property string cfg_LocalImagePaths
     property string cfg_RotationMode
     property bool cfg_IncludeLocalImages
-    property int cfg_LocalImageRatio
     property int cfg_MinBookmarks
     property int cfg_MinViews
     property string cfg_TagBlacklist
@@ -32,6 +35,68 @@ Kirigami.FormLayout {
     property int cfg_FillMode
     property alias cfg_Color: colorButton.color
     property bool cfg_NotifyEvents
+
+    property int refreshHoursPart: 0
+    property int refreshMinutesPart: 0
+    property int refreshSecondsPart: 0
+    property int rotateHoursPart: 0
+    property int rotateMinutesPart: 0
+    property int rotateSecondsPart: 0
+
+    function normalizeSeconds(rawSeconds, rawMinutes, fallbackMinutes) {
+        var seconds = Number(rawSeconds || 0);
+        if (!isFinite(seconds) || seconds <= 0) {
+            seconds = Number(rawMinutes || 0) * 60;
+        }
+        if (!isFinite(seconds) || seconds <= 0) {
+            seconds = fallbackMinutes * 60;
+        }
+        return Math.max(1, Math.round(seconds));
+    }
+
+    function splitSeconds(totalSeconds) {
+        var total = Math.max(0, Math.round(totalSeconds));
+        var hours = Math.floor(total / 3600);
+        var minutes = Math.floor((total % 3600) / 60);
+        var seconds = total % 60;
+        return {"hours": hours, "minutes": minutes, "seconds": seconds};
+    }
+
+    function syncRefreshPartsFromConfig() {
+        var parts = splitSeconds(normalizeSeconds(cfg_RefreshSeconds, cfg_RefreshMinutes, 360));
+        refreshHoursPart = parts.hours;
+        refreshMinutesPart = parts.minutes;
+        refreshSecondsPart = parts.seconds;
+    }
+
+    function syncRotatePartsFromConfig() {
+        var parts = splitSeconds(normalizeSeconds(cfg_RotateSeconds, cfg_RotateMinutes, 30));
+        rotateHoursPart = parts.hours;
+        rotateMinutesPart = parts.minutes;
+        rotateSecondsPart = parts.seconds;
+    }
+
+    function applyRefreshParts() {
+        var total = Math.max(1, refreshHoursPart * 3600 + refreshMinutesPart * 60 + refreshSecondsPart);
+        cfg_RefreshSeconds = total;
+        cfg_RefreshMinutes = Math.max(1, Math.ceil(total / 60));
+    }
+
+    function applyRotateParts() {
+        var total = Math.max(1, rotateHoursPart * 3600 + rotateMinutesPart * 60 + rotateSecondsPart);
+        cfg_RotateSeconds = total;
+        cfg_RotateMinutes = Math.max(1, Math.ceil(total / 60));
+    }
+
+    onCfg_RefreshSecondsChanged: syncRefreshPartsFromConfig()
+    onCfg_RefreshMinutesChanged: syncRefreshPartsFromConfig()
+    onCfg_RotateSecondsChanged: syncRotatePartsFromConfig()
+    onCfg_RotateMinutesChanged: syncRotatePartsFromConfig()
+
+    Component.onCompleted: {
+        syncRefreshPartsFromConfig();
+        syncRotatePartsFromConfig();
+    }
 
     RowLayout {
         Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Refresh token:")
@@ -82,24 +147,106 @@ Kirigami.FormLayout {
         onTextChanged: cfg_Theme = text
     }
 
-    QQC2.SpinBox {
+    RowLayout {
         Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Fetch every:")
-        from: 5
-        to: 10080
-        value: cfg_RefreshMinutes
-        textFromValue: function(value) { return i18ndp("plasma_wallpaper_org.pixiv.wallpaper", "%1 minute", "%1 minutes", value); }
-        valueFromText: function(text) { return parseInt(text) || value; }
-        onValueModified: cfg_RefreshMinutes = value
+        Layout.fillWidth: true
+        enabled: cfg_AutoFetch
+
+        QQC2.SpinBox {
+            from: 0
+            to: 999
+            value: refreshHoursPart
+            editable: true
+            onValueModified: {
+                refreshHoursPart = value;
+                root.applyRefreshParts();
+            }
+        }
+
+        QQC2.Label { text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "h") }
+
+        QQC2.SpinBox {
+            from: 0
+            to: 59
+            value: refreshMinutesPart
+            editable: true
+            onValueModified: {
+                refreshMinutesPart = value;
+                root.applyRefreshParts();
+            }
+        }
+
+        QQC2.Label { text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "m") }
+
+        QQC2.SpinBox {
+            from: 0
+            to: 59
+            value: refreshSecondsPart
+            editable: true
+            onValueModified: {
+                refreshSecondsPart = value;
+                root.applyRefreshParts();
+            }
+        }
+
+        QQC2.Label { text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "s") }
     }
 
-    QQC2.SpinBox {
+    QQC2.CheckBox {
+        text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Auto fetch Pixiv images")
+        checked: cfg_AutoFetch
+        onToggled: cfg_AutoFetch = checked
+    }
+
+    RowLayout {
         Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Rotate every:")
-        from: 1
-        to: 1440
-        value: cfg_RotateMinutes
-        textFromValue: function(value) { return i18ndp("plasma_wallpaper_org.pixiv.wallpaper", "%1 minute", "%1 minutes", value); }
-        valueFromText: function(text) { return parseInt(text) || value; }
-        onValueModified: cfg_RotateMinutes = value
+        Layout.fillWidth: true
+        enabled: cfg_AutoRotate
+
+        QQC2.SpinBox {
+            from: 0
+            to: 999
+            value: rotateHoursPart
+            editable: true
+            onValueModified: {
+                rotateHoursPart = value;
+                root.applyRotateParts();
+            }
+        }
+
+        QQC2.Label { text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "h") }
+
+        QQC2.SpinBox {
+            from: 0
+            to: 59
+            value: rotateMinutesPart
+            editable: true
+            onValueModified: {
+                rotateMinutesPart = value;
+                root.applyRotateParts();
+            }
+        }
+
+        QQC2.Label { text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "m") }
+
+        QQC2.SpinBox {
+            from: 0
+            to: 59
+            value: rotateSecondsPart
+            editable: true
+            onValueModified: {
+                rotateSecondsPart = value;
+                root.applyRotateParts();
+            }
+        }
+
+        QQC2.Label { text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "s") }
+    }
+
+    QQC2.CheckBox {
+        text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Auto rotate wallpapers")
+        checked: cfg_AutoRotate
+        onToggled: cfg_AutoRotate = checked
     }
 
     QQC2.SpinBox {
@@ -115,6 +262,7 @@ Kirigami.FormLayout {
         Layout.fillWidth: true
         implicitHeight: Kirigami.Units.gridUnit * 5
         text: cfg_LocalImagePaths
+        enabled: cfg_IncludeLocalImages
         placeholderText: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "One file or folder per line")
         wrapMode: TextEdit.WrapAnywhere
         onTextChanged: cfg_LocalImagePaths = text
@@ -122,15 +270,19 @@ Kirigami.FormLayout {
 
     QQC2.ComboBox {
         id: rotationModeCombo
-        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Rotation mode:")
+        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Sort order:")
         textRole: "label"
         valueRole: "value"
         model: [
-            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Sequential"), "value": "sequential" },
-            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Random"), "value": "random" }
+            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Modified time (newest first)"), "value": "mtime_desc" },
+            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Modified time (oldest first)"), "value": "mtime_asc" },
+            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Random (non-repeating cycle)"), "value": "random" }
         ]
         onActivated: cfg_RotationMode = currentValue
         Component.onCompleted: {
+            if (cfg_RotationMode === "sequential") {
+                cfg_RotationMode = "mtime_desc";
+            }
             for (var i = 0; i < model.length; i++) {
                 if (model[i].value === cfg_RotationMode) {
                     currentIndex = i;
@@ -144,25 +296,6 @@ Kirigami.FormLayout {
         text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Include local images")
         checked: cfg_IncludeLocalImages
         onToggled: cfg_IncludeLocalImages = checked
-    }
-
-    RowLayout {
-        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Local image ratio:")
-        Layout.fillWidth: true
-        enabled: cfg_IncludeLocalImages
-
-        QQC2.Slider {
-            Layout.fillWidth: true
-            from: 0
-            to: 100
-            stepSize: 5
-            value: cfg_LocalImageRatio
-            onMoved: cfg_LocalImageRatio = Math.round(value)
-        }
-
-        QQC2.Label {
-            text: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "%1% local", cfg_LocalImageRatio)
-        }
     }
 
     QQC2.SpinBox {
@@ -227,7 +360,8 @@ Kirigami.FormLayout {
             { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Scaled and cropped"), "fillMode": Image.PreserveAspectCrop },
             { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Scaled, keep proportions"), "fillMode": Image.PreserveAspectFit },
             { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Stretched"), "fillMode": Image.Stretch },
-            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Centered"), "fillMode": Image.Pad }
+            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Centered"), "fillMode": Image.Pad },
+            { "label": i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Tiled"), "fillMode": Image.Tile }
         ]
         onActivated: cfg_FillMode = currentValue
         Component.onCompleted: {

@@ -9,9 +9,9 @@ You can get the package in the [KDE Store](https://store.kde.org/p/2360473/)
 1. Select `Pixiv Wallpaper` in the Plasma wallpaper settings.
 2. Click `Login` and complete Pixiv OAuth in the browser.
 3. Choose a source: daily recommendations, theme search, daily ranking, or following.
-4. Configure fetch interval, rotate interval, filters, and image positioning.
+4. Configure fetch/rotate intervals (hour/minute/second), filters, and image positioning.
 5. Optionally add local image files or folders, one path per line.
-6. Choose the rotation mode: sequential or random.
+6. Choose the sort order: modified time (newest first), modified time (oldest first), or random non-repeating cycle.
 7. Enable local images if you want local paths to be mixed into rotation.
 
 ## Right-Click Actions

@@ -232,7 +232,7 @@ for (var i = 0; i < ds.length; i++) {
         continue;
     }
     ds[i].currentConfigGroup = ['Wallpaper', 'org.pixiv.wallpaper', 'General'];
-    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RotateMinutes', 'FetchCount', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'LocalImageRatio', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage'];
+    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RefreshSeconds', 'AutoFetch', 'RotateMinutes', 'RotateSeconds', 'AutoRotate', 'FetchCount', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'LocalImageRatio', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage', 'CurrentIndex', 'RandomHistory'];
     for (var k = 0; k < keys.length; k++) {
         result[keys[k]] = String(ds[i].readConfig(keys[k]));
     }
@@ -801,6 +801,17 @@ def value_to_paths(value: Any) -> list[Path]:
     return [Path(str(part).strip()).expanduser() for part in parts if str(part).strip()]
 
 
+def value_to_strings(value: Any) -> list[str]:
+    if isinstance(value, list):
+        parts = value
+    else:
+        raw = str(value or "")
+        if not raw or raw == "undefined":
+            return []
+        parts = [part.strip() for line in raw.splitlines() for part in line.split(",")]
+    return [str(part).strip() for part in parts if str(part).strip()]
+
+
 def sync_local_image_cache(config: dict[str, str] | None = None) -> list[Path]:
     config = config or read_plugin_config()
     images = local_image_paths(config)
@@ -813,33 +824,67 @@ def sync_local_image_cache(config: dict[str, str] | None = None) -> list[Path]:
     return images
 
 
-def choose_from_paths(paths: list[Path], current: str, mode: str) -> tuple[Path, int]:
-    if not paths:
-        raise PixivWallpaperError("No wallpapers available yet")
-    if mode == "random":
-        index = random.randrange(len(paths))
-        if len(paths) > 1 and str(paths[index]) == current:
-            index = (index + 1) % len(paths)
-        return paths[index], index
-    path_strings = [str(path) for path in paths]
-    current_index = path_strings.index(current) if current in path_strings else -1
-    index = (current_index + 1) % len(paths)
-    return paths[index], index
+def path_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
-def rotate_from_config(config: dict[str, str], cache_dir: Path) -> tuple[Path, int]:
-    cached = [Path(path) for path in manifest_image_paths(cache_dir)]
-    configured_mode = config.get("RotationMode")
-    mode = configured_mode if configured_mode in {"sequential", "random"} else "sequential"
-    current = config.get("CurrentImage", "")
+def rotation_paths(config: dict[str, str], cache_dir: Path) -> list[Path]:
+    cached_from_config = value_to_paths(config.get("CachedImages", ""))
+    paths: list[Path] = cached_from_config if cached_from_config else [Path(path) for path in manifest_image_paths(cache_dir)]
     if parse_bool(config.get("IncludeLocalImages"), False):
         local = cached_local_image_paths(config)
         if not local:
             local = sync_local_image_cache(config)
-        ratio = max(0, min(100, parse_int(config.get("LocalImageRatio"), 50)))
-        if local and (not cached or random.randrange(100) < ratio):
-            return choose_from_paths(local, current, mode)
-    return choose_from_paths(cached, current, mode)
+        paths.extend(local)
+    existing = [path for path in paths if path.is_file()]
+    return unique_paths(existing)
+
+
+def rotate_from_config(config: dict[str, str], cache_dir: Path) -> tuple[Path, int, list[str]]:
+    paths = rotation_paths(config, cache_dir)
+    if not paths:
+        raise PixivWallpaperError("No wallpapers available yet")
+
+    configured_mode = config.get("RotationMode", "")
+    if configured_mode == "sequential":
+        configured_mode = "mtime_desc"
+    mode = configured_mode if configured_mode in {"mtime_desc", "mtime_asc", "random"} else "mtime_desc"
+
+    reverse = mode != "mtime_asc"
+    ordered_paths = sorted(paths, key=path_mtime, reverse=reverse)
+    path_strings = [str(path) for path in ordered_paths]
+    current = config.get("CurrentImage", "")
+    if current == "undefined":
+        current = ""
+
+    if mode == "random":
+        raw_history = value_to_strings(config.get("RandomHistory", ""))
+        history: list[str] = []
+        seen: set[str] = set()
+        for item in raw_history:
+            if item in path_strings and item not in seen:
+                history.append(item)
+                seen.add(item)
+
+        remaining = [path for path in path_strings if path not in history and path != current]
+        if not remaining:
+            history = [current] if current in path_strings and len(path_strings) > 1 else []
+            remaining = [path for path in path_strings if path not in history]
+        if not remaining:
+            remaining = list(path_strings)
+
+        chosen = random.choice(remaining)
+        history.append(chosen)
+        if len(history) > len(path_strings):
+            history = history[-len(path_strings) :]
+        return Path(chosen), path_strings.index(chosen), history
+
+    current_index = path_strings.index(current) if current in path_strings else -1
+    index = (current_index + 1) % len(ordered_paths)
+    return ordered_paths[index], index, []
 
 
 def next_image(cache_dir: Path) -> tuple[Path, str]:
@@ -1012,7 +1057,7 @@ def namespace_from_config(config: dict[str, str], cache_dir: Path) -> argparse.N
     )
 
 
-def fetch_from_config(config: dict[str, str], cache_dir: Path, now: float) -> tuple[Path, str]:
+def fetch_from_config(config: dict[str, str], cache_dir: Path, now: float, apply_image: bool = True) -> tuple[Path | None, str]:
     plugin_args = namespace_from_config(config, cache_dir)
     api = create_pixiv_api(plugin_args.refresh_token, cache_dir)
     illusts = fetch_illusts(plugin_args, api)
@@ -1033,25 +1078,44 @@ def fetch_from_config(config: dict[str, str], cache_dir: Path, now: float) -> tu
         raise PixivWallpaperError("Could not download any matching Pixiv images")
     update_manifest(cache_dir, downloaded)
     cleanup(cache_dir)
-    image, description = next_image(cache_dir)
+    timestamp = str(int(now))
+    if apply_image:
+        image, description = next_image(cache_dir)
+        manifest = sanitize_manifest(cache_dir)
+        images = [str(entry.get("path")) for entry in manifest.get("images", [])]
+        write_plugin_config(
+            {
+                "CurrentImage": str(image),
+                "CachedImages": images,
+                "CurrentIndex": str(manifest.get("index", -1)),
+                "RandomHistory": [],
+                "LastFetch": timestamp,
+                "LastRotate": timestamp,
+            }
+        )
+        return image, f"Fetched {len(downloaded)} Pixiv image(s). Showing {description}."
+
     manifest = sanitize_manifest(cache_dir)
     images = [str(entry.get("path")) for entry in manifest.get("images", [])]
-    timestamp = str(int(now))
+    current_index = parse_int(config.get("CurrentIndex"), -1)
+    current_image = config.get("CurrentImage", "")
+    if current_image == "undefined":
+        current_image = ""
     write_plugin_config(
         {
-            "CurrentImage": str(image),
             "CachedImages": images,
-            "CurrentIndex": str(manifest.get("index", -1)),
+            "CurrentIndex": str(current_index),
+            "RandomHistory": [],
             "LastFetch": timestamp,
-            "LastRotate": timestamp,
         }
     )
-    return image, f"Fetched {len(downloaded)} Pixiv image(s). Showing {description}."
+    return (Path(current_image) if current_image else None), f"Fetched {len(downloaded)} Pixiv image(s). Auto rotation is disabled, keeping current wallpaper."
 
 
 def rotate_cached(cache_dir: Path, now: float, config: dict[str, str] | None = None) -> tuple[Path, str]:
+    random_history: list[str] = []
     if config:
-        image, index = rotate_from_config(config, cache_dir)
+        image, index, random_history = rotate_from_config(config, cache_dir)
         description = image.name
     else:
         image, description = next_image(cache_dir)
@@ -1065,6 +1129,7 @@ def rotate_cached(cache_dir: Path, now: float, config: dict[str, str] | None = N
             "CachedImages": images,
             "CurrentIndex": str(index),
             "LastRotate": str(int(now)),
+            "RandomHistory": random_history,
         }
     )
     return image, message
@@ -1129,21 +1194,27 @@ def command_daemon_tick(args: argparse.Namespace) -> None:
         return
 
     now = time.time()
-    refresh_minutes = max(1, parse_int(config.get("RefreshMinutes"), 360))
-    rotate_minutes = max(1, parse_int(config.get("RotateMinutes"), 30))
+    refresh_seconds = parse_int(config.get("RefreshSeconds"), 0)
+    if refresh_seconds <= 0:
+        refresh_seconds = max(1, parse_int(config.get("RefreshMinutes"), 360)) * 60
+    rotate_seconds = parse_int(config.get("RotateSeconds"), 0)
+    if rotate_seconds <= 0:
+        rotate_seconds = max(1, parse_int(config.get("RotateMinutes"), 30)) * 60
+    auto_fetch = parse_bool(config.get("AutoFetch"), True)
+    auto_rotate = parse_bool(config.get("AutoRotate"), True)
     last_fetch = parse_time(config.get("LastFetch", ""))
     last_rotate = parse_time(config.get("LastRotate", ""))
 
-    if not last_fetch or now - last_fetch >= refresh_minutes * 60:
+    if auto_fetch and (not last_fetch or now - last_fetch >= refresh_seconds):
         try:
-            image, message = fetch_from_config(config, cache_dir, now)
-            emit_event("ok", message, str(image), config=config, important=True)
+            image, message = fetch_from_config(config, cache_dir, now, apply_image=auto_rotate)
+            emit_event("ok", message, str(image) if image else None, config=config, important=True)
             return
         except Exception as error:  # noqa: BLE001
             emit_event("error", str(error), config=config, important=True)
             return
 
-    if now - last_rotate >= rotate_minutes * 60:
+    if auto_rotate and now - last_rotate >= rotate_seconds:
         try:
             image, message = rotate_cached(cache_dir, now, config)
             emit_event("ok", message, str(image), config=config, important=True)

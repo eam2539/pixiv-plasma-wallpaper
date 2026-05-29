@@ -4,7 +4,7 @@ msgstr ""
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-05-24 00:00+0000\n"
 "PO-Revision-Date: 2026-05-24 00:00+0000\n"
-"Last-Translator: OpenCode\n"
+"Last-Translator: eam2539\n"
 "Language-Team: Chinese Simplified\n"
 "Language: zh_CN\n"
 "MIME-Version: 1.0\n"
@@ -66,12 +66,27 @@ msgstr "示例：landscape、初音ミク"
 msgid "Fetch every:"
 msgstr "抓取间隔："
 
+msgid "h"
+msgstr "时"
+
+msgid "m"
+msgstr "分"
+
+msgid "s"
+msgstr "秒"
+
+msgid "Auto fetch Pixiv images"
+msgstr "自动抓取 Pixiv 图片"
+
 msgid "%1 minute"
 msgid_plural "%1 minutes"
 msgstr[0] "%1 分钟"
 
 msgid "Rotate every:"
 msgstr "轮换间隔："
+
+msgid "Auto rotate wallpapers"
+msgstr "自动轮换壁纸"
 
 msgid "Fetch count:"
 msgstr "抓取数量："
@@ -85,6 +100,18 @@ msgstr "每行一个文件或文件夹"
 msgid "Rotation mode:"
 msgstr "轮换方式："
 
+msgid "Sort order:"
+msgstr "排序："
+
+msgid "Modified time (newest first)"
+msgstr "按修改日期（最新在前）"
+
+msgid "Modified time (oldest first)"
+msgstr "按修改日期（最新在后）"
+
+msgid "Random (non-repeating cycle)"
+msgstr "随机（不重复轮巡）"
+
 msgid "Sequential"
 msgstr "顺序"
 
@@ -93,9 +120,6 @@ msgstr "随机"
 
 msgid "Include local images"
 msgstr "包含本地图片"
-
-msgid "Local image ratio:"
-msgstr "本地图片比例："
 
 msgid "%1% local"
 msgstr "%1% 本地"
@@ -141,6 +165,9 @@ msgstr "拉伸"
 
 msgid "Centered"
 msgstr "居中"
+
+msgid "Tiled"
+msgstr "平铺"
 
 msgid "Background color:"
 msgstr "背景颜色："

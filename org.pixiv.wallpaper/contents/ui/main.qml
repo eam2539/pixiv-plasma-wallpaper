@@ -148,30 +148,6 @@ WallpaperItem {
         return false;
     }
 
-    function combinedImages() {
-        return root.uniquePaths(root.cachedImages().concat(root.localImages()));
-    }
-
-    function ratioImages() {
-        if (!root.configuration.IncludeLocalImages) {
-            return root.cachedImages();
-        }
-        var local = root.localImages();
-        var cached = root.cachedImages();
-        if (local.length === 0) {
-            return cached;
-        }
-        if (cached.length === 0) {
-            return local;
-        }
-        var ratio = Math.max(0, Math.min(100, Number(root.configuration.LocalImageRatio || 50)));
-        return Math.random() * 100 < ratio ? local : cached;
-    }
-
-    function rotationImages() {
-        return root.ratioImages();
-    }
-
     function removeCachedImage(path) {
         if (!path || path.length === 0) {
             return [];
@@ -191,39 +167,7 @@ WallpaperItem {
 
     function rotateNow() {
         console.log("Pixiv Wallpaper: rotateNow triggered");
-        var images = [];
-        try {
-            images = root.rotationImages();
-        } catch (error) {
-            console.log("Pixiv Wallpaper: cached image parse failed", error);
-        }
-        console.log("Pixiv Wallpaper: cached image count", images.length, "current image", root.visibleImage);
-        if (images.length === 0) {
-            if (root.configuration.IncludeLocalImages && root.hasLocalFolderPaths()) {
-                root.syncLocalImageCache();
-            }
-            root.statusText = i18nd("plasma_wallpaper_org.pixiv.wallpaper", "No wallpapers available yet.");
-            console.log("Pixiv Wallpaper:", root.statusText);
-            return;
-        }
-
-        var mode = String(root.configuration.RotationMode || "sequential");
-        var currentIndex = images.indexOf(root.visibleImage);
-        if (currentIndex < 0) {
-            currentIndex = images.indexOf(root.configuration.CurrentImage);
-        }
-        var nextIndex = mode === "random" ? Math.floor(Math.random() * images.length) : (currentIndex + 1) % images.length;
-        if (mode === "random" && images.length > 1 && images[nextIndex] === root.visibleImage) {
-            nextIndex = (nextIndex + 1) % images.length;
-        }
-        var nextImage = images[nextIndex];
-        root.configuration.CurrentImage = nextImage;
-        root.configuration.CurrentIndex = nextIndex;
-        root.configuration.LastRotate = Date.now().toString();
-        root.configuration.writeConfig();
-        root.statusText = i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Showing wallpaper.");
-        root.setVisibleImage(nextImage);
-        console.log("Pixiv Wallpaper: rotated to", nextImage);
+        executable.connectSource("/usr/bin/python3 " + root.helperScript + " rotate-now");
     }
 
     function setVisibleImage(path) {
@@ -234,7 +178,11 @@ WallpaperItem {
             return;
         }
         root.loading = true;
-        wallpaperImage.sourceSize = Qt.size(root.screenWidth(), root.screenHeight());
+        if (root.configuration.FillMode === Image.Tile) {
+            wallpaperImage.sourceSize = Qt.size(0, 0);
+        } else {
+            wallpaperImage.sourceSize = Qt.size(root.screenWidth(), root.screenHeight());
+        }
         Qt.callLater(function() {
             if (root.visibleImage === path) {
                 wallpaperImage.source = root.imageSource(path);
@@ -291,6 +239,27 @@ WallpaperItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) {
+            var stdout = String(data["stdout"] || "").trim();
+            if (stdout.length > 0) {
+                var lines = stdout.split(/\r?\n/);
+                for (var i = lines.length - 1; i >= 0; i--) {
+                    try {
+                        var payload = JSON.parse(lines[i]);
+                        if (payload.message) {
+                            root.statusText = String(payload.message);
+                        }
+                        if (payload.image) {
+                            var nextImage = String(payload.image);
+                            if (nextImage.length > 0) {
+                                root.configuration.CurrentImage = nextImage;
+                                root.setVisibleImage(nextImage);
+                            }
+                        }
+                        break;
+                    } catch (error) {
+                    }
+                }
+            }
             executable.disconnectSource(source);
         }
     }
@@ -315,6 +284,11 @@ WallpaperItem {
         }
         function onIncludeLocalImagesChanged() {
             root.syncLocalImageCache();
+        }
+        function onFillModeChanged() {
+            if (root.visibleImage.length > 0) {
+                root.setVisibleImage(root.visibleImage);
+            }
         }
     }
 

@@ -22,9 +22,25 @@
       <label>Minutes between Pixiv fetches</label>
       <default>360</default>
     </entry>
+    <entry name="RefreshSeconds" type="Int">
+      <label>Seconds between Pixiv fetches</label>
+      <default>21600</default>
+    </entry>
+    <entry name="AutoFetch" type="Bool">
+      <label>Automatically fetch Pixiv images</label>
+      <default>true</default>
+    </entry>
     <entry name="RotateMinutes" type="Int">
       <label>Minutes between wallpaper rotations</label>
       <default>30</default>
+    </entry>
+    <entry name="RotateSeconds" type="Int">
+      <label>Seconds between wallpaper rotations</label>
+      <default>1800</default>
+    </entry>
+    <entry name="AutoRotate" type="Bool">
+      <label>Automatically rotate wallpapers</label>
+      <default>true</default>
     </entry>
     <entry name="FetchCount" type="Int">
       <label>Images to download per fetch</label>
@@ -43,16 +59,12 @@
       <default></default>
     </entry>
     <entry name="RotationMode" type="String">
-      <label>Wallpaper rotation mode</label>
-      <default>sequential</default>
+      <label>Wallpaper sort order</label>
+      <default>mtime_desc</default>
     </entry>
     <entry name="IncludeLocalImages" type="Bool">
       <label>Include local images in rotation</label>
       <default>false</default>
-    </entry>
-    <entry name="LocalImageRatio" type="Int">
-      <label>Local image ratio percent</label>
-      <default>50</default>
     </entry>
     <entry name="MinBookmarks" type="Int">
       <label>Minimum bookmarks</label>
@@ -101,6 +113,10 @@
     <entry name="CurrentIndex" type="Int">
       <label>Current cached wallpaper index</label>
       <default>-1</default>
+    </entry>
+    <entry name="RandomHistory" type="StringList">
+      <label>Random rotation history</label>
+      <default></default>
     </entry>
     <entry name="LastFetch" type="String">
       <label>Last fetch time</label>
