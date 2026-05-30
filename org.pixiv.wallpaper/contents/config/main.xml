@@ -42,8 +42,8 @@
       <label>Automatically rotate wallpapers</label>
       <default>true</default>
     </entry>
-    <entry name="FetchCount" type="Int">
-      <label>Images to download per fetch</label>
+    <entry name="MaxFetchCount" type="Int">
+      <label>Maximum images to download per fetch</label>
       <default>10</default>
     </entry>
     <entry name="FetchArtworkCount" type="Int">

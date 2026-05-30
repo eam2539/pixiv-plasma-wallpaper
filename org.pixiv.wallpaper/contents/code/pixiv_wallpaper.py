@@ -19,7 +19,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 
 APP_API = "https://app-api.pixiv.net"
@@ -47,6 +47,152 @@ LOGIN_DESKTOP_NAME = "pixiv-plasma-wallpaper-login.desktop"
 CALLBACK_DESKTOP_NAME = "pixiv-plasma-wallpaper-callback.desktop"
 SERVICE_NAME = "pixiv-plasma-wallpaper.service"
 TIMER_NAME = "pixiv-plasma-wallpaper.timer"
+
+PIXIV_BYPASS_HOSTS: Final[frozenset[str]] = frozenset({
+    "app-api.pixiv.net",
+    "oauth.secure.pixiv.net",
+    "i.pximg.net",
+    "s.pximg.net",
+})
+
+PIXIV_DNS_MAP: Final[dict[str, str]] = {
+    "app-api.pixiv.net": "210.140.139.155",
+    "oauth.secure.pixiv.net": "210.140.139.155",
+    "i.pximg.net": "210.140.139.133",
+    "s.pximg.net": "210.140.139.133",
+}
+
+_BYPASS_INSTALLED: bool = False
+_SKIP_BYPASS: bool = False
+
+
+def _detect_gfw_region() -> bool:
+    """Check public IP geolocation to decide whether GFW bypass is needed.
+
+    Caches the result in ``DEFAULT_CACHE_DIR / "region.json"`` for 7 days.
+    Falls back to a direct connectivity probe when the geolocation API is
+    unreachable.
+    """
+    from datetime import timedelta
+
+    region_file = DEFAULT_CACHE_DIR / "region.json"
+    now = time.time()
+    if region_file.exists():
+        try:
+            cached = json.loads(region_file.read_text(encoding="utf-8"))
+            if isinstance(cached, dict) and isinstance(cached.get("in_china"), bool):
+                age = now - float(cached.get("checked_at", 0))
+                if age < timedelta(days=7).total_seconds():
+                    return bool(cached["in_china"])
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
+            pass
+
+    in_china = _query_geo_api()
+    if in_china is None:
+        in_china = _probe_pixiv_connectivity()
+
+    DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    region_file.write_text(
+        json.dumps({"in_china": bool(in_china), "checked_at": now}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return bool(in_china)
+
+
+def _query_geo_api() -> bool | None:
+    """Return True when the public IP appears to be located in China."""
+    try:
+        request = urllib.request.Request(
+            "http://ip-api.com/json/?fields=countryCode",
+            headers={"User-Agent": USER_AGENT},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            data = json.loads(response.read().decode())
+    except Exception:
+        return None
+    country = (data or {}).get("countryCode", "")
+    if isinstance(country, str) and len(country) == 2:
+        return country.upper() == "CN"
+    return None
+
+
+def _probe_pixiv_connectivity() -> bool:
+    """Return True when *direct* pixiv API access is broken (likely GFW).
+
+    We do a quick TLS handshake to ``app-api.pixiv.net`` via real DNS.
+    If the DNS returns a poisoned address or the TLS handshake fails with a
+    non-timeout error within 3 seconds, we assume the link is blocked.
+    """
+    import socket
+    import ssl
+
+    try:
+        addrinfo = socket.getaddrinfo("app-api.pixiv.net", 443, socket.AF_INET,
+                                      socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        for family, stype, proto, _canonname, sockaddr in addrinfo:
+            ip = sockaddr[0]
+            if ip == "198.18.0.23":
+                return True
+            try:
+                with socket.create_connection(sockaddr[:2], timeout=3) as sock:  # type: ignore[arg-type]
+                    cert_dir = Path("/etc/ssl/certs")
+                    ctx = ssl.create_default_context(
+                        cafile=str(cert_dir / "ca-certificates.crt")
+                        if (cert_dir / "ca-certificates.crt").exists()
+                        else None,
+                    )
+                    with ctx.wrap_socket(sock, server_hostname="app-api.pixiv.net") as _tls:
+                        return False
+            except (ssl.SSLError, OSError) as exc:
+                msg = str(exc).lower()
+                if "eof" in msg or "unexpected eof" in msg or "bad record mac" in msg:
+                    return True
+                return True
+            except Exception:
+                continue
+    except Exception:
+        return True
+    return True
+
+
+def _install_pixiv_bypass() -> None:
+    global _BYPASS_INSTALLED
+    if _BYPASS_INSTALLED:
+        return
+    _BYPASS_INSTALLED = True
+
+    import socket
+    import ssl
+
+    _original_getaddrinfo = socket.getaddrinfo
+
+    def _pixiv_getaddrinfo(host, *args, **kwargs) -> Any:  # type: ignore[no-untyped-def]
+        if isinstance(host, str) and host in PIXIV_DNS_MAP:
+            host = PIXIV_DNS_MAP[host]
+        return _original_getaddrinfo(host, *args, **kwargs)  # type: ignore[no-any-return]
+
+    socket.getaddrinfo = _pixiv_getaddrinfo  # type: ignore[assignment]
+
+    _original_wrap_socket = ssl.SSLContext.wrap_socket
+
+    def _bypass_wrap_socket(ctx_self, sock, server_side=False,  # type: ignore[no-untyped-def]
+                            do_handshake_on_connect=True, suppress_ragged_eofs=True,
+                            server_hostname=None, session=None):
+        if isinstance(server_hostname, str) and server_hostname in PIXIV_BYPASS_HOSTS:
+            ctx_self.check_hostname = False
+            server_hostname = None
+        return _original_wrap_socket(ctx_self, sock, server_side,
+                                     do_handshake_on_connect, suppress_ragged_eofs,
+                                     server_hostname, session)
+
+    ssl.SSLContext.wrap_socket = _bypass_wrap_socket  # type: ignore[assignment]
+
+
+def _ensure_bypass() -> None:
+    if _SKIP_BYPASS:
+        return
+    if _detect_gfw_region():
+        _install_pixiv_bypass()
 
 
 class PixivWallpaperError(RuntimeError):
@@ -149,7 +295,7 @@ def log_info(message: str) -> None:
     text = f"Pixiv Wallpaper: {message}"
     print(text, file=sys.stderr)
     try:
-        evaluate_plasma(f"console.log({js_string(text)});")
+        evaluate_plasma(f"print({js_string(text)});")
     except Exception:
         pass
 
@@ -232,7 +378,7 @@ for (var i = 0; i < ds.length; i++) {
         continue;
     }
     ds[i].currentConfigGroup = ['Wallpaper', 'org.pixiv.wallpaper', 'General'];
-    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RefreshSeconds', 'AutoFetch', 'RotateMinutes', 'RotateSeconds', 'AutoRotate', 'FetchCount', 'FetchArtworkCount', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'LocalImageRatio', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage', 'CurrentIndex', 'RandomHistory'];
+    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RefreshSeconds', 'AutoFetch', 'RotateMinutes', 'RotateSeconds', 'AutoRotate', 'MaxFetchCount', 'FetchArtworkCount', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage', 'CurrentIndex', 'RandomHistory'];
     for (var k = 0; k < keys.length; k++) {
         result[keys[k]] = String(ds[i].readConfig(keys[k]));
     }
@@ -486,6 +632,7 @@ def auth_code(code: str, code_verifier: str) -> dict[str, Any]:
 
 
 def create_pixiv_api(refresh_token: str, cache_dir: Path) -> Any:
+    _ensure_bypass()
     AppPixivAPI = pixiv_api_class()
     api = AppPixivAPI(timeout=45)
     api.set_accept_language("zh-CN,zh;q=0.9,en;q=0.7,ja;q=0.6")
@@ -698,6 +845,10 @@ def suffix_for_url(url: str) -> str:
     return guessed or ".jpg"
 
 
+def image_mirror_url(url: str) -> str:
+    return url.replace(PIXIV_IMAGE_HOST, ALT_IMAGE_HOST, 1)
+
+
 def download_all(candidate: Candidate, cache_dir: Path, api: Any) -> list[Path]:
     images_dir = cache_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -710,8 +861,9 @@ def download_all(candidate: Candidate, cache_dir: Path, api: Any) -> list[Path]:
             downloaded.append(target)
             continue
 
+        download_url = image_mirror_url(url)
         try:
-            api.download(url, path=str(images_dir), name=filename, replace=True)
+            api.download(download_url, path=str(images_dir), name=filename, replace=True)
         except Exception as error:  # noqa: BLE001
             raise PixivWallpaperError(
                 f"Failed to download artwork {candidate.illust_id} page {page_index + 1}/{len(candidate.urls)}: {error}"
@@ -1080,7 +1232,7 @@ def namespace_from_config(config: dict[str, str], cache_dir: Path) -> argparse.N
         theme="" if config.get("Theme") == "undefined" else config.get("Theme", ""),
         width=parse_int(config.get("Width"), 1920),
         height=parse_int(config.get("Height"), 1080),
-        fetch_count=max(1, parse_int(config.get("FetchCount"), 10)),
+        fetch_count=max(1, parse_int(config.get("MaxFetchCount"), 10)),
         fetch_artwork_count=max(1, parse_int(config.get("FetchArtworkCount"), 4)),
         min_bookmarks=max(0, parse_int(config.get("MinBookmarks"), 0)),
         min_views=max(0, parse_int(config.get("MinViews"), 0)),
@@ -1510,6 +1662,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-ai", action="store_true")
     parser.add_argument("--landscape-only", action="store_true")
     parser.add_argument("--output-json", action="store_true", help="Accepted for the QML caller; output is always JSON.")
+    parser.add_argument("--skip-bypass", action="store_true", help="Disable GFW bypass even in China.")
+    parser.add_argument("--detect", action="store_true", help="Print region detection result and exit.")
     args = parser.parse_args()
     if args.action == "fetch" and not args.refresh_token.strip():
         raise PixivWallpaperError("Missing Pixiv refresh token")
@@ -1526,6 +1680,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     try:
         args = parse_args()
+        if args.skip_bypass:
+            global _SKIP_BYPASS
+            _SKIP_BYPASS = True
+        if args.detect:
+            in_china = _detect_gfw_region()
+            print(json.dumps({"in_china": in_china, "bypass_would_install": in_china and not args.skip_bypass}))
+            return 0
         if args.action == "next":
             command_next(args)
         elif args.action == "daemon-tick":
