@@ -22,6 +22,7 @@ Kirigami.FormLayout {
     property int cfg_RotateSeconds
     property bool cfg_AutoRotate
     property int cfg_FetchCount
+    property int cfg_FetchArtworkCount
     property string cfg_LocalImagePaths
     property string cfg_RotationMode
     property bool cfg_IncludeLocalImages
@@ -250,11 +251,19 @@ Kirigami.FormLayout {
     }
 
     QQC2.SpinBox {
-        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Fetch count:")
+        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Fetch count per fetch:")
         from: 1
-        to: 50
+        to: 200
         value: cfg_FetchCount
         onValueModified: cfg_FetchCount = value
+    }
+
+    QQC2.SpinBox {
+        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Artwork count per fetch:")
+        from: 1
+        to: 50
+        value: cfg_FetchArtworkCount
+        onValueModified: cfg_FetchArtworkCount = value
     }
 
     QQC2.TextArea {

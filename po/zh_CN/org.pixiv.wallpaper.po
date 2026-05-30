@@ -88,8 +88,11 @@ msgstr "轮换间隔："
 msgid "Auto rotate wallpapers"
 msgstr "自动轮换壁纸"
 
-msgid "Fetch count:"
-msgstr "抓取数量："
+msgid "Fetch count per fetch:"
+msgstr "每次抓取数量："
+
+msgid "Artwork count per fetch:"
+msgstr "每次抓取作品数："
 
 msgid "Local image paths:"
 msgstr "本地图片路径："

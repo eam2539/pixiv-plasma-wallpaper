@@ -1,5 +1,5 @@
 [project]
 name = "pixiv-plasma-wallpaper"
-version = "0.4.0"
+version = "0.4.1"
 requires-python = ">=3.13"
 dependencies = ["PixivPy3"]

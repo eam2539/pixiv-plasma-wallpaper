@@ -44,6 +44,10 @@
     </entry>
     <entry name="FetchCount" type="Int">
       <label>Images to download per fetch</label>
+      <default>10</default>
+    </entry>
+    <entry name="FetchArtworkCount" type="Int">
+      <label>Artworks to download per fetch</label>
       <default>4</default>
     </entry>
     <entry name="LocalImagePaths" type="String">

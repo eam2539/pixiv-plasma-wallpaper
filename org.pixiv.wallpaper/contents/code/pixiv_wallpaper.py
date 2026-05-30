@@ -134,7 +134,7 @@ class Candidate:
     height: int
     bookmarks: int
     views: int
-    url: str
+    urls: tuple[str, ...]
     score: float
 
 
@@ -232,7 +232,7 @@ for (var i = 0; i < ds.length; i++) {
         continue;
     }
     ds[i].currentConfigGroup = ['Wallpaper', 'org.pixiv.wallpaper', 'General'];
-    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RefreshSeconds', 'AutoFetch', 'RotateMinutes', 'RotateSeconds', 'AutoRotate', 'FetchCount', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'LocalImageRatio', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage', 'CurrentIndex', 'RandomHistory'];
+    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RefreshSeconds', 'AutoFetch', 'RotateMinutes', 'RotateSeconds', 'AutoRotate', 'FetchCount', 'FetchArtworkCount', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'LocalImageRatio', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage', 'CurrentIndex', 'RandomHistory'];
     for (var k = 0; k < keys.length; k++) {
         result[keys[k]] = String(ds[i].readConfig(keys[k]));
     }
@@ -593,16 +593,22 @@ def fetch_illusts(args: argparse.Namespace, api: Any) -> list[dict[str, Any]]:
     return [illust for illust in theme_filtered if matches_tag_blacklist(illust, blacklist_terms)]
 
 
-def image_url(illust: dict[str, Any]) -> str:
+def image_urls(illust: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
     meta_pages = illust.get("meta_pages") or []
     if meta_pages:
-        first = meta_pages[0]
-        urls = first.get("image_urls") or {}
-        return urls.get("original") or urls.get("large") or urls.get("medium") or ""
+        for page in meta_pages:
+            page_urls = page.get("image_urls") or {}
+            url = page_urls.get("original") or page_urls.get("large") or page_urls.get("medium") or ""
+            if url:
+                urls.append(url)
+        if urls:
+            return urls
 
     meta_single = illust.get("meta_single_page") or {}
-    urls = illust.get("image_urls") or {}
-    return meta_single.get("original_image_url") or urls.get("large") or urls.get("medium") or urls.get("square_medium") or ""
+    single_urls = illust.get("image_urls") or {}
+    url = meta_single.get("original_image_url") or single_urls.get("large") or single_urls.get("medium") or single_urls.get("square_medium") or ""
+    return [url] if url else []
 
 
 def is_r18(illust: dict[str, Any]) -> bool:
@@ -627,12 +633,12 @@ def is_ai(illust: dict[str, Any]) -> bool:
     return False
 
 
-def score_candidate(illust: dict[str, Any], url: str, args: argparse.Namespace) -> Candidate | None:
+def score_candidate(illust: dict[str, Any], urls: list[str], args: argparse.Namespace) -> Candidate | None:
     width = int(illust.get("width") or 0)
     height = int(illust.get("height") or 0)
     bookmarks = int(illust.get("total_bookmarks") or 0)
     views = illust_views(illust)
-    if not url or width <= 0 or height <= 0:
+    if not urls or width <= 0 or height <= 0:
         return None
     if args.landscape_only and width < height:
         return None
@@ -669,7 +675,7 @@ def score_candidate(illust: dict[str, Any], url: str, args: argparse.Namespace) 
         height=height,
         bookmarks=bookmarks,
         views=views,
-        url=url,
+        urls=tuple(urls),
         score=score,
     )
 
@@ -677,7 +683,7 @@ def score_candidate(illust: dict[str, Any], url: str, args: argparse.Namespace) 
 def select_candidates(illusts: list[dict[str, Any]], args: argparse.Namespace) -> list[Candidate]:
     candidates = []
     for illust in illusts:
-        candidate = score_candidate(illust, image_url(illust), args)
+        candidate = score_candidate(illust, image_urls(illust), args)
         if candidate:
             candidates.append(candidate)
     candidates.sort(key=lambda item: item.score)
@@ -692,16 +698,34 @@ def suffix_for_url(url: str) -> str:
     return guessed or ".jpg"
 
 
-def download(candidate: Candidate, cache_dir: Path, api: Any) -> Path:
+def download_all(candidate: Candidate, cache_dir: Path, api: Any) -> list[Path]:
     images_dir = cache_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{candidate.illust_id}_{candidate.width}x{candidate.height}{suffix_for_url(candidate.url)}"
-    target = images_dir / filename
-    if target.exists() and target.stat().st_size > 0:
-        return target
+    downloaded: list[Path] = []
+    for page_index, url in enumerate(candidate.urls):
+        suffix = suffix_for_url(url)
+        filename = f"{candidate.illust_id}_p{page_index:03d}_{candidate.width}x{candidate.height}{suffix}"
+        target = images_dir / filename
+        if target.exists() and target.stat().st_size > 0:
+            downloaded.append(target)
+            continue
 
-    api.download(candidate.url, path=str(images_dir), name=filename, replace=True)
-    return target
+        try:
+            api.download(url, path=str(images_dir), name=filename, replace=True)
+        except Exception as error:  # noqa: BLE001
+            raise PixivWallpaperError(
+                f"Failed to download artwork {candidate.illust_id} page {page_index + 1}/{len(candidate.urls)}: {error}"
+            ) from error
+        if target.exists() and target.stat().st_size > 0:
+            downloaded.append(target)
+            continue
+        raise PixivWallpaperError(
+            f"Downloaded file missing for artwork {candidate.illust_id} page {page_index + 1}/{len(candidate.urls)}"
+        )
+
+    if not downloaded:
+        raise PixivWallpaperError(f"Could not download images for artwork {candidate.illust_id}")
+    return downloaded
 
 
 def load_manifest(cache_dir: Path) -> dict[str, Any]:
@@ -903,21 +927,22 @@ def next_image(cache_dir: Path) -> tuple[Path, str]:
     return Path(entry["path"]), f"{entry.get('title', 'Pixiv')} by {entry.get('user_name', 'unknown')}"
 
 
-def update_manifest(cache_dir: Path, selected: list[tuple[Candidate, Path]]) -> None:
+def update_manifest(cache_dir: Path, selected: list[tuple[Candidate, list[Path]]]) -> None:
     manifest = sanitize_manifest(cache_dir)
     existing = {entry.get("path"): entry for entry in manifest.get("images", []) if entry.get("path")}
-    for candidate, path in selected:
-        existing[str(path)] = {
-            "path": str(path),
-            "illust_id": candidate.illust_id,
-            "title": candidate.title,
-            "user_name": candidate.user_name,
-            "width": candidate.width,
-            "height": candidate.height,
-            "bookmarks": candidate.bookmarks,
-            "views": candidate.views,
-            "fetched_at": int(time.time()),
-        }
+    for candidate, paths in selected:
+        for path in paths:
+            existing[str(path)] = {
+                "path": str(path),
+                "illust_id": candidate.illust_id,
+                "title": candidate.title,
+                "user_name": candidate.user_name,
+                "width": candidate.width,
+                "height": candidate.height,
+                "bookmarks": candidate.bookmarks,
+                "views": candidate.views,
+                "fetched_at": int(time.time()),
+            }
 
     images = sorted(existing.values(), key=lambda entry: entry.get("fetched_at", 0), reverse=True)[:80]
     manifest["images"] = images
@@ -945,14 +970,18 @@ def command_fetch(args: argparse.Namespace) -> None:
     if not candidates:
         raise PixivWallpaperError("No matching Pixiv illustrations found; loosen filters or try another source")
 
-    top = candidates[: min(len(candidates), max(12, args.fetch_count * 2))]
+    pool_size = max(12, max(args.fetch_artwork_count, args.fetch_count) * 2)
+    top = candidates[: min(len(candidates), pool_size)]
     random.shuffle(top)
-    downloaded: list[tuple[Candidate, Path]] = []
+    downloaded: list[tuple[Candidate, list[Path]]] = []
+    downloaded_images = 0
     last_error = ""
     for candidate in top:
         try:
-            downloaded.append((candidate, download(candidate, cache_dir, api)))
-            if len(downloaded) >= args.fetch_count:
+            pages = download_all(candidate, cache_dir, api)
+            downloaded.append((candidate, pages))
+            downloaded_images += len(pages)
+            if len(downloaded) >= args.fetch_artwork_count or downloaded_images >= args.fetch_count:
                 break
         except Exception as error:  # noqa: BLE001
             last_error = str(error)
@@ -963,7 +992,13 @@ def command_fetch(args: argparse.Namespace) -> None:
     update_manifest(cache_dir, downloaded)
     cleanup(cache_dir)
     image, description = next_image(cache_dir)
-    emit_event("ok", f"Fetched {len(downloaded)} Pixiv image(s). Showing {description}.", str(image), important=True)
+    total_images = downloaded_images
+    emit_event(
+        "ok",
+        f"Fetched {len(downloaded)} artwork(s) with {total_images} image(s). Showing {description}.",
+        str(image),
+        important=True,
+    )
 
 
 def command_next(args: argparse.Namespace) -> None:
@@ -1045,7 +1080,8 @@ def namespace_from_config(config: dict[str, str], cache_dir: Path) -> argparse.N
         theme="" if config.get("Theme") == "undefined" else config.get("Theme", ""),
         width=parse_int(config.get("Width"), 1920),
         height=parse_int(config.get("Height"), 1080),
-        fetch_count=max(1, parse_int(config.get("FetchCount"), 4)),
+        fetch_count=max(1, parse_int(config.get("FetchCount"), 10)),
+        fetch_artwork_count=max(1, parse_int(config.get("FetchArtworkCount"), 4)),
         min_bookmarks=max(0, parse_int(config.get("MinBookmarks"), 0)),
         min_views=max(0, parse_int(config.get("MinViews"), 0)),
         tag_blacklist="" if config.get("TagBlacklist") == "undefined" else config.get("TagBlacklist", ""),
@@ -1064,18 +1100,24 @@ def fetch_from_config(config: dict[str, str], cache_dir: Path, now: float, apply
     candidates = select_candidates(illusts, plugin_args)
     if not candidates:
         raise PixivWallpaperError("No matching Pixiv illustrations found; loosen filters or try another source")
-    top = candidates[: min(len(candidates), max(12, plugin_args.fetch_count * 2))]
+    pool_size = max(12, max(plugin_args.fetch_artwork_count, plugin_args.fetch_count) * 2)
+    top = candidates[: min(len(candidates), pool_size)]
     random.shuffle(top)
-    downloaded: list[tuple[Candidate, Path]] = []
+    downloaded: list[tuple[Candidate, list[Path]]] = []
+    downloaded_images = 0
+    last_error = ""
     for candidate in top:
         try:
-            downloaded.append((candidate, download(candidate, cache_dir, api)))
-            if len(downloaded) >= plugin_args.fetch_count:
+            pages = download_all(candidate, cache_dir, api)
+            downloaded.append((candidate, pages))
+            downloaded_images += len(pages)
+            if len(downloaded) >= plugin_args.fetch_artwork_count or downloaded_images >= plugin_args.fetch_count:
                 break
-        except Exception:
+        except Exception as error:  # noqa: BLE001
+            last_error = str(error)
             continue
     if not downloaded:
-        raise PixivWallpaperError("Could not download any matching Pixiv images")
+        raise PixivWallpaperError(f"Could not download any matching Pixiv images: {last_error}")
     update_manifest(cache_dir, downloaded)
     cleanup(cache_dir)
     timestamp = str(int(now))
@@ -1093,7 +1135,8 @@ def fetch_from_config(config: dict[str, str], cache_dir: Path, now: float, apply
                 "LastRotate": timestamp,
             }
         )
-        return image, f"Fetched {len(downloaded)} Pixiv image(s). Showing {description}."
+        total_images = downloaded_images
+        return image, f"Fetched {len(downloaded)} artwork(s) with {total_images} image(s). Showing {description}."
 
     manifest = sanitize_manifest(cache_dir)
     images = [str(entry.get("path")) for entry in manifest.get("images", [])]
@@ -1109,7 +1152,8 @@ def fetch_from_config(config: dict[str, str], cache_dir: Path, now: float, apply
             "LastFetch": timestamp,
         }
     )
-    return (Path(current_image) if current_image else None), f"Fetched {len(downloaded)} Pixiv image(s). Auto rotation is disabled, keeping current wallpaper."
+    total_images = downloaded_images
+    return (Path(current_image) if current_image else None), f"Fetched {len(downloaded)} artwork(s) with {total_images} image(s). Auto rotation is disabled, keeping current wallpaper."
 
 
 def rotate_cached(cache_dir: Path, now: float, config: dict[str, str] | None = None) -> tuple[Path, str]:
@@ -1456,7 +1500,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--theme", default="")
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)
-    parser.add_argument("--fetch-count", type=int, default=4)
+    parser.add_argument("--fetch-count", type=int, default=10)
+    parser.add_argument("--fetch-artwork-count", type=int, default=4)
     parser.add_argument("--min-bookmarks", type=int, default=0)
     parser.add_argument("--min-views", type=int, default=0)
     parser.add_argument("--tag-blacklist", default="")
@@ -1472,6 +1517,7 @@ def parse_args() -> argparse.Namespace:
     args.width = max(1, args.width)
     args.height = max(1, args.height)
     args.fetch_count = max(1, args.fetch_count)
+    args.fetch_artwork_count = max(1, args.fetch_artwork_count)
     args.min_bookmarks = max(0, args.min_bookmarks)
     args.min_views = max(0, args.min_views)
     return args

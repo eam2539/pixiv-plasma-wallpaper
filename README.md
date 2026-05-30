@@ -27,7 +27,7 @@ You can get the package in the [KDE Store](https://store.kde.org/p/2360473/)
 To rotate the wallpaper with a keyboard shortcut, open KDE System Settings → `Keyboard` → `Shortcut Key`, add a custom shell shortcut and paste:
 
 ```bash
-/usr/bin/python3 ~/.local/share/plasma/wallpapers/org.pixiv.wallpaper/contents/code/pixiv_wallpaper.py rotate-now
+~/.local/share/pixiv-plasma-wallpaper/venv/bin/python3 ~/.local/share/plasma/wallpapers/org.pixiv.wallpaper/contents/code/pixiv_wallpaper.py rotate-now
 ```
 
 ## Requirements
