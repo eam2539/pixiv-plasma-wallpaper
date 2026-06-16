@@ -23,6 +23,8 @@ Kirigami.FormLayout {
     property bool cfg_AutoRotate
     property int cfg_MaxFetchCount
     property int cfg_FetchArtworkCount
+    property int cfg_MaxCacheCount
+    property int cfg_CacheExpireDays
     property string cfg_LocalImagePaths
     property string cfg_RotationMode
     property bool cfg_IncludeLocalImages
@@ -264,6 +266,29 @@ Kirigami.FormLayout {
         to: 50
         value: cfg_FetchArtworkCount
         onValueModified: cfg_FetchArtworkCount = value
+    }
+
+    QQC2.SpinBox {
+        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Max cached images:")
+        from: 10
+        to: 10000
+        stepSize: 50
+        value: cfg_MaxCacheCount
+        onValueModified: cfg_MaxCacheCount = value
+    }
+
+    QQC2.SpinBox {
+        Kirigami.FormData.label: i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Cache expire days (0=never):")
+        from: 0
+        to: 365
+        stepSize: 7
+        value: cfg_CacheExpireDays
+        textFromValue: function(value) {
+            return value === 0
+                ? i18nd("plasma_wallpaper_org.pixiv.wallpaper", "Never")
+                : String(value);
+        }
+        onValueModified: cfg_CacheExpireDays = value
     }
 
     QQC2.TextArea {

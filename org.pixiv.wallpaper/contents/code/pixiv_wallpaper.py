@@ -378,7 +378,7 @@ for (var i = 0; i < ds.length; i++) {
         continue;
     }
     ds[i].currentConfigGroup = ['Wallpaper', 'org.pixiv.wallpaper', 'General'];
-    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RefreshSeconds', 'AutoFetch', 'RotateMinutes', 'RotateSeconds', 'AutoRotate', 'MaxFetchCount', 'FetchArtworkCount', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage', 'CurrentIndex', 'RandomHistory'];
+    var keys = ['RefreshToken', 'Mode', 'Theme', 'RefreshMinutes', 'RefreshSeconds', 'AutoFetch', 'RotateMinutes', 'RotateSeconds', 'AutoRotate', 'MaxFetchCount', 'FetchArtworkCount', 'MaxCacheCount', 'CacheExpireDays', 'LocalImagePaths', 'LocalImageCache', 'LocalImageCacheKey', 'RotationMode', 'IncludeLocalImages', 'MinBookmarks', 'MinViews', 'TagBlacklist', 'IncludeR18', 'IncludeAI', 'LandscapeOnly', 'FitTolerance', 'NotifyEvents', 'LastFetch', 'LastRotate', 'CurrentImage', 'CurrentIndex', 'RandomHistory'];
     for (var k = 0; k < keys.length; k++) {
         result[keys[k]] = String(ds[i].readConfig(keys[k]));
     }
@@ -1081,6 +1081,8 @@ def next_image(cache_dir: Path) -> tuple[Path, str]:
 
 def update_manifest(cache_dir: Path, selected: list[tuple[Candidate, list[Path]]]) -> None:
     manifest = sanitize_manifest(cache_dir)
+    config = read_plugin_config()
+    max_cache = parse_int(config.get("MaxCacheCount"), 500)
     existing = {entry.get("path"): entry for entry in manifest.get("images", []) if entry.get("path")}
     for candidate, paths in selected:
         for path in paths:
@@ -1096,7 +1098,7 @@ def update_manifest(cache_dir: Path, selected: list[tuple[Candidate, list[Path]]
                 "fetched_at": int(time.time()),
             }
 
-    images = sorted(existing.values(), key=lambda entry: entry.get("fetched_at", 0), reverse=True)[:80]
+    images = sorted(existing.values(), key=lambda entry: entry.get("fetched_at", 0), reverse=True)[:max_cache]
     manifest["images"] = images
     manifest["index"] = -1
     save_manifest(cache_dir, manifest)
@@ -1104,7 +1106,30 @@ def update_manifest(cache_dir: Path, selected: list[tuple[Candidate, list[Path]]
 
 def cleanup(cache_dir: Path) -> None:
     manifest = sanitize_manifest(cache_dir)
-    keep = {entry.get("path") for entry in manifest.get("images", [])}
+    config = read_plugin_config()
+    expire_days = parse_int(config.get("CacheExpireDays"), 0)
+
+    images = manifest.get("images", [])
+    if expire_days > 0 and images:
+        now = time.time()
+        cutoff = now - expire_days * 86400
+        old_len = len(images)
+        images = [
+            entry for entry in images
+            if float(entry.get("fetched_at", 0)) >= cutoff
+        ]
+        if len(images) < old_len:
+            kept_map = {entry.get("path") for entry in images}
+            for entry in manifest.get("images", []):
+                p = entry.get("path")
+                if p and str(p) not in kept_map:
+                    Path(str(p)).unlink(missing_ok=True)
+            manifest["images"] = images
+            if manifest.get("index", -1) >= len(images):
+                manifest["index"] = len(images) - 1 if images else -1
+            save_manifest(cache_dir, manifest)
+
+    keep = {entry.get("path") for entry in images}
     images_dir = cache_dir / "images"
     if not images_dir.exists():
         return

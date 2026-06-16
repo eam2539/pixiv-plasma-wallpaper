@@ -50,6 +50,14 @@
       <label>Artworks to download per fetch</label>
       <default>4</default>
     </entry>
+    <entry name="MaxCacheCount" type="Int">
+      <label>Maximum images to keep in local cache</label>
+      <default>500</default>
+    </entry>
+    <entry name="CacheExpireDays" type="Int">
+      <label>Days to keep cached images (0 = never expire)</label>
+      <default>0</default>
+    </entry>
     <entry name="LocalImagePaths" type="String">
       <label>Local image paths, one per line</label>
       <default></default>

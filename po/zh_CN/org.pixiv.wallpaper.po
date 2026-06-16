@@ -201,3 +201,18 @@ msgstr "图片加载失败，已跳过。"
 
 msgid "Show desktop notifications"
 msgstr "显示桌面通知"
+
+msgid "Max cached images:"
+msgstr "最大缓存数量："
+
+msgid "Maximum images to keep in local cache"
+msgstr "本地最大缓存图片数量"
+
+msgid "Cache expire days (0=never):"
+msgstr "缓存过期天数（0=永不过期）："
+
+msgid "Days to keep cached images (0 = never expire)"
+msgstr "缓存保留天数（0=永不过期）"
+
+msgid "Never"
+msgstr "永不过期"
