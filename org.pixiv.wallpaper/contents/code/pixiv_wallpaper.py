@@ -486,10 +486,48 @@ def auth_code(code: str, code_verifier: str) -> dict[str, Any]:
     )
 
 
+def proxy_url_from_env() -> str | None:
+    """Return system proxy URL, preferring env vars then KDE kioslaverc."""
+    https_proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY") or ""
+    if https_proxy.strip():
+        return https_proxy.strip()
+    try:
+        kioslaverc = Path.home() / ".config" / "kioslaverc"
+        if not kioslaverc.exists():
+            return None
+        lines = kioslaverc.read_text(encoding="utf-8").splitlines()
+        in_proxy = False
+        proxy_type = "0"
+        http_proxy = ""
+        for line in lines:
+            line = line.strip()
+            if line == "[Proxy Settings]":
+                in_proxy = True
+                continue
+            if in_proxy:
+                if line.startswith("["):
+                    break
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    if key == "ProxyType":
+                        proxy_type = value
+                    elif key == "httpProxy":
+                        http_proxy = value
+        if proxy_type == "1" and http_proxy:
+            return http_proxy
+    except (OSError, UnicodeDecodeError):
+        pass
+    return None
+
+
 def create_pixiv_api(refresh_token: str, cache_dir: Path) -> Any:
     AppPixivAPI = pixiv_api_class()
     api = AppPixivAPI(timeout=45)
     api.set_accept_language("zh-CN,zh;q=0.9,en;q=0.7,ja;q=0.6")
+
+    proxy = proxy_url_from_env()
+    if proxy:
+        api.requests.proxies = {"http": proxy, "https": proxy}
     token_file = cache_dir / "token.json"
     if token_file.exists():
         try:
