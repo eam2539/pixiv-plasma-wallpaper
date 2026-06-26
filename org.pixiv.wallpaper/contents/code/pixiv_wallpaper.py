@@ -11,6 +11,7 @@ import mimetypes
 import os
 import secrets
 import random
+import re
 import sys
 import time
 import urllib.error
@@ -47,6 +48,11 @@ LOGIN_DESKTOP_NAME = "pixiv-plasma-wallpaper-login.desktop"
 CALLBACK_DESKTOP_NAME = "pixiv-plasma-wallpaper-callback.desktop"
 SERVICE_NAME = "pixiv-plasma-wallpaper.service"
 TIMER_NAME = "pixiv-plasma-wallpaper.timer"
+PIXIV_CACHE_NAME_RE = re.compile(r"^(\d+)_p\d+_")
+FETCH_FAILURE_STATE_NAME = "fetch_failure.json"
+FETCH_FAILURE_BASE_RETRY_SECONDS = 300
+FETCH_FAILURE_MAX_RETRY_SECONDS = 3600
+FETCH_FAILURE_NOTIFY_SECONDS = 3600
 
  
 
@@ -382,6 +388,77 @@ def parse_time(value: str) -> float:
             return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
         except ValueError:
             return 0
+
+
+def format_duration(seconds: int) -> str:
+    seconds = max(1, int(seconds))
+    if seconds >= 3600:
+        hours = max(1, round(seconds / 3600))
+        return f"{hours} hour(s)"
+    if seconds >= 60:
+        minutes = max(1, round(seconds / 60))
+        return f"{minutes} minute(s)"
+    return f"{seconds} second(s)"
+
+
+def fetch_failure_state_file(cache_dir: Path) -> Path:
+    return cache_dir / FETCH_FAILURE_STATE_NAME
+
+
+def load_fetch_failure_state(cache_dir: Path) -> dict[str, Any]:
+    state_file = fetch_failure_state_file(cache_dir)
+    if not state_file.exists():
+        return {}
+    try:
+        value = json.loads(state_file.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def save_fetch_failure_state(cache_dir: Path, state: dict[str, Any]) -> None:
+    fetch_failure_state_file(cache_dir).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def clear_fetch_failure_state(cache_dir: Path) -> None:
+    fetch_failure_state_file(cache_dir).unlink(missing_ok=True)
+
+
+def fetch_error_key(message: str) -> str:
+    text = re.sub(r"0x[0-9a-fA-F]+", "0x*", message)
+    return text[:500]
+
+
+def fetch_retry_delay(cache_dir: Path, now: float) -> int:
+    state = load_fetch_failure_state(cache_dir)
+    next_retry_at = parse_int(state.get("next_retry_at"), 0)
+    if next_retry_at <= now:
+        return 0
+    return max(1, int(next_retry_at - now))
+
+
+def record_fetch_failure(cache_dir: Path, now: float, message: str) -> tuple[int, bool]:
+    state = load_fetch_failure_state(cache_dir)
+    key = fetch_error_key(message)
+    previous_key = str(state.get("error_key") or "")
+    previous_failures = parse_int(state.get("failures"), 0)
+    failures = previous_failures + 1 if previous_key == key else 1
+    retry_seconds = min(FETCH_FAILURE_MAX_RETRY_SECONDS, FETCH_FAILURE_BASE_RETRY_SECONDS * (2 ** min(failures - 1, 10)))
+
+    last_notified_at = parse_int(state.get("last_notified_at"), 0)
+    should_notify = previous_key != key or not last_notified_at or now - last_notified_at >= FETCH_FAILURE_NOTIFY_SECONDS
+    save_fetch_failure_state(
+        cache_dir,
+        {
+            "failures": failures,
+            "error_key": key,
+            "last_error": message,
+            "updated_at": int(now),
+            "next_retry_at": int(now + retry_seconds),
+            "last_notified_at": int(now) if should_notify else last_notified_at,
+        },
+    )
+    return retry_seconds, should_notify
 
 
 def request_json(url: str, *, headers: dict[str, str] | None = None, data: dict[str, Any] | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -803,6 +880,43 @@ def sanitize_manifest(cache_dir: Path) -> dict[str, Any]:
     return manifest
 
 
+def pixiv_illust_id_from_cache_path(path: Path) -> int:
+    match = PIXIV_CACHE_NAME_RE.match(path.name)
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return 0
+
+
+def cached_illust_ids(cache_dir: Path) -> set[int]:
+    manifest = sanitize_manifest(cache_dir)
+    ids: set[int] = set()
+    for entry in manifest.get("images", []):
+        illust_id = parse_int(entry.get("illust_id"), 0)
+        if illust_id <= 0 and entry.get("path"):
+            illust_id = pixiv_illust_id_from_cache_path(Path(str(entry.get("path"))))
+        if illust_id > 0:
+            ids.add(illust_id)
+    return ids
+
+
+def uncached_candidates(candidates: list[Candidate], cache_dir: Path) -> tuple[list[Candidate], int]:
+    cached_ids = cached_illust_ids(cache_dir)
+    seen_ids: set[int] = set()
+    fresh: list[Candidate] = []
+    skipped = 0
+    for candidate in candidates:
+        if candidate.illust_id > 0:
+            if candidate.illust_id in cached_ids or candidate.illust_id in seen_ids:
+                skipped += 1
+                continue
+            seen_ids.add(candidate.illust_id)
+        fresh.append(candidate)
+    return fresh, skipped
+
+
 def manifest_image_paths(cache_dir: Path) -> list[str]:
     manifest = sanitize_manifest(cache_dir)
     return [str(entry.get("path")) for entry in manifest.get("images", [])]
@@ -1030,6 +1144,34 @@ def cleanup(cache_dir: Path) -> None:
             path.unlink(missing_ok=True)
 
 
+def download_candidate_batch(
+    candidates: list[Candidate],
+    cache_dir: Path,
+    api: Any,
+    fetch_artwork_count: int,
+    fetch_count: int,
+) -> tuple[list[tuple[Candidate, list[Path]]], int, int, str]:
+    fresh_candidates, skipped_cached = uncached_candidates(candidates, cache_dir)
+    pool_size = max(12, max(fetch_artwork_count, fetch_count) * 2)
+    top = fresh_candidates[: min(len(fresh_candidates), pool_size)]
+    random.shuffle(top)
+
+    downloaded: list[tuple[Candidate, list[Path]]] = []
+    downloaded_images = 0
+    last_error = ""
+    for candidate in top:
+        try:
+            pages = download_all(candidate, cache_dir, api)
+            downloaded.append((candidate, pages))
+            downloaded_images += len(pages)
+            if len(downloaded) >= fetch_artwork_count or downloaded_images >= fetch_count:
+                break
+        except Exception as error:  # noqa: BLE001
+            last_error = str(error)
+            continue
+    return downloaded, downloaded_images, skipped_cached, last_error
+
+
 def command_fetch(args: argparse.Namespace) -> None:
     cache_dir = Path(args.cache_dir).expanduser()
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1039,27 +1181,30 @@ def command_fetch(args: argparse.Namespace) -> None:
     if not candidates:
         raise PixivWallpaperError("No matching Pixiv illustrations found; loosen filters or try another source")
 
-    pool_size = max(12, max(args.fetch_artwork_count, args.fetch_count) * 2)
-    top = candidates[: min(len(candidates), pool_size)]
-    random.shuffle(top)
-    downloaded: list[tuple[Candidate, list[Path]]] = []
-    downloaded_images = 0
-    last_error = ""
-    for candidate in top:
-        try:
-            pages = download_all(candidate, cache_dir, api)
-            downloaded.append((candidate, pages))
-            downloaded_images += len(pages)
-            if len(downloaded) >= args.fetch_artwork_count or downloaded_images >= args.fetch_count:
-                break
-        except Exception as error:  # noqa: BLE001
-            last_error = str(error)
+    downloaded, downloaded_images, skipped_cached, last_error = download_candidate_batch(
+        candidates,
+        cache_dir,
+        api,
+        args.fetch_artwork_count,
+        args.fetch_count,
+    )
 
     if not downloaded:
+        if skipped_cached and not last_error:
+            image, description = next_image(cache_dir)
+            clear_fetch_failure_state(cache_dir)
+            emit_event(
+                "ok",
+                f"Skipped {skipped_cached} cached artwork(s); no new Pixiv images. Showing {description}.",
+                str(image),
+                important=True,
+            )
+            return
         raise PixivWallpaperError(f"Could not download matching images: {last_error}")
 
     update_manifest(cache_dir, downloaded)
     cleanup(cache_dir)
+    clear_fetch_failure_state(cache_dir)
     image, description = next_image(cache_dir)
     total_images = downloaded_images
     emit_event(
@@ -1169,26 +1314,52 @@ def fetch_from_config(config: dict[str, str], cache_dir: Path, now: float, apply
     candidates = select_candidates(illusts, plugin_args)
     if not candidates:
         raise PixivWallpaperError("No matching Pixiv illustrations found; loosen filters or try another source")
-    pool_size = max(12, max(plugin_args.fetch_artwork_count, plugin_args.fetch_count) * 2)
-    top = candidates[: min(len(candidates), pool_size)]
-    random.shuffle(top)
-    downloaded: list[tuple[Candidate, list[Path]]] = []
-    downloaded_images = 0
-    last_error = ""
-    for candidate in top:
-        try:
-            pages = download_all(candidate, cache_dir, api)
-            downloaded.append((candidate, pages))
-            downloaded_images += len(pages)
-            if len(downloaded) >= plugin_args.fetch_artwork_count or downloaded_images >= plugin_args.fetch_count:
-                break
-        except Exception as error:  # noqa: BLE001
-            last_error = str(error)
-            continue
+    downloaded, downloaded_images, skipped_cached, last_error = download_candidate_batch(
+        candidates,
+        cache_dir,
+        api,
+        plugin_args.fetch_artwork_count,
+        plugin_args.fetch_count,
+    )
     if not downloaded:
+        if skipped_cached and not last_error:
+            timestamp = str(int(now))
+            clear_fetch_failure_state(cache_dir)
+            if apply_image:
+                image, description = next_image(cache_dir)
+                manifest = sanitize_manifest(cache_dir)
+                images = [str(entry.get("path")) for entry in manifest.get("images", [])]
+                write_plugin_config(
+                    {
+                        "CurrentImage": str(image),
+                        "CachedImages": images,
+                        "CurrentIndex": str(manifest.get("index", -1)),
+                        "RandomHistory": [],
+                        "LastFetch": timestamp,
+                        "LastRotate": timestamp,
+                    }
+                )
+                return image, f"Skipped {skipped_cached} cached artwork(s); no new Pixiv images. Showing {description}."
+
+            manifest = sanitize_manifest(cache_dir)
+            images = [str(entry.get("path")) for entry in manifest.get("images", [])]
+            current_index = parse_int(config.get("CurrentIndex"), -1)
+            current_image = config.get("CurrentImage", "")
+            if current_image == "undefined":
+                current_image = ""
+            write_plugin_config(
+                {
+                    "CachedImages": images,
+                    "CurrentIndex": str(current_index),
+                    "RandomHistory": [],
+                    "LastFetch": timestamp,
+                }
+            )
+            return (Path(current_image) if current_image else None), f"Skipped {skipped_cached} cached artwork(s); no new Pixiv images. Auto rotation is disabled, keeping current wallpaper."
         raise PixivWallpaperError(f"Could not download any matching Pixiv images: {last_error}")
     update_manifest(cache_dir, downloaded)
     cleanup(cache_dir)
+    clear_fetch_failure_state(cache_dir)
     timestamp = str(int(now))
     if apply_image:
         image, description = next_image(cache_dir)
@@ -1317,15 +1488,26 @@ def command_daemon_tick(args: argparse.Namespace) -> None:
     auto_rotate = parse_bool(config.get("AutoRotate"), True)
     last_fetch = parse_time(config.get("LastFetch", ""))
     last_rotate = parse_time(config.get("LastRotate", ""))
+    deferred_fetch_message = ""
 
     if auto_fetch and (not last_fetch or now - last_fetch >= refresh_seconds):
-        try:
-            image, message = fetch_from_config(config, cache_dir, now, apply_image=auto_rotate)
-            emit_event("ok", message, str(image) if image else None, config=config, important=True)
-            return
-        except Exception as error:  # noqa: BLE001
-            emit_event("error", str(error), config=config, important=True)
-            return
+        retry_delay = fetch_retry_delay(cache_dir, now)
+        if retry_delay > 0:
+            deferred_fetch_message = f"Pixiv fetch retry deferred for {format_duration(retry_delay)} after previous request error."
+        else:
+            try:
+                image, message = fetch_from_config(config, cache_dir, now, apply_image=auto_rotate)
+                emit_event("ok", message, str(image) if image else None, config=config, important=True)
+                return
+            except Exception as error:  # noqa: BLE001
+                retry_seconds, should_notify = record_fetch_failure(cache_dir, now, str(error))
+                emit_event(
+                    "error",
+                    f"{error} Retrying in {format_duration(retry_seconds)}.",
+                    config=config,
+                    important=should_notify,
+                )
+                return
 
     if auto_rotate and now - last_rotate >= rotate_seconds:
         try:
@@ -1336,7 +1518,11 @@ def command_daemon_tick(args: argparse.Namespace) -> None:
             emit_event("error", str(error), config=config, important=True)
             return
 
-    emit_event("ok", "No Pixiv wallpaper update due yet.", config.get("CurrentImage") if config.get("CurrentImage") != "undefined" else None)
+    emit_event(
+        "ok",
+        deferred_fetch_message or "No Pixiv wallpaper update due yet.",
+        config.get("CurrentImage") if config.get("CurrentImage") != "undefined" else None,
+    )
 
 
 def run_quiet(command: list[str]) -> None:

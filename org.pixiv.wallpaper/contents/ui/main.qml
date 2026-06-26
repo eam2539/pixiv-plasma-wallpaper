@@ -216,16 +216,6 @@ WallpaperItem {
         if (!path || path.length === 0) {
             return;
         }
-        if (path.indexOf(root.cacheImagesDir) !== 0) {
-            var images = root.valueToList(root.configuration.LocalImagePaths);
-            if (images.indexOf(path) < 0) {
-                images.unshift(path);
-            }
-            root.configuration.LocalImagePaths = images.join("\n");
-            root.configuration.CurrentIndex = 0;
-        } else {
-            root.configuration.CurrentIndex = -1;
-        }
         root.configuration.CurrentImage = path;
         root.configuration.LastRotate = Date.now().toString();
         root.configuration.writeConfig();
